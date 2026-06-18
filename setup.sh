@@ -123,6 +123,33 @@ else
     fi
 fi
 
+# 7. SLURM account / QOS — resolve per-user and persist.
+#    env.sh (sourced above) already tried to auto-detect them via sacctmgr; we only
+#    prompt for whatever it couldn't find, then save it so future shells reuse it.
+echo ""
+echo ">>> SLURM account / QOS"
+if [ -n "${EBJEPA_SLURM_ACCOUNT:-}" ]; then
+    echo "    Account: $EBJEPA_SLURM_ACCOUNT (auto-detected)"
+else
+    echo -n "    SLURM account not auto-detected — enter it (blank = let SLURM use your default): "
+    read -r EBJEPA_SLURM_ACCOUNT
+fi
+if [ -n "${EBJEPA_SLURM_QOS:-}" ]; then
+    echo "    QOS: $EBJEPA_SLURM_QOS (auto-detected)"
+else
+    echo -n "    SLURM QOS not auto-detected — enter it (blank = let SLURM use your default): "
+    read -r EBJEPA_SLURM_QOS
+fi
+# Persist so every future shell (via env.sh) reuses these without re-querying SLURM.
+SLURM_ENV_FILE="${EBJEPA_SLURM_USER_ENV:-$WORK/.eb_jepa_slurm.env}"
+{
+    echo "# EB-JEPA per-user SLURM settings (written by setup.sh). Delete to re-detect."
+    echo "export EBJEPA_SLURM_CONFIGURED=1"
+    if [ -n "$EBJEPA_SLURM_ACCOUNT" ]; then echo "export EBJEPA_SLURM_ACCOUNT='$EBJEPA_SLURM_ACCOUNT'"; fi
+    if [ -n "$EBJEPA_SLURM_QOS" ]; then echo "export EBJEPA_SLURM_QOS='$EBJEPA_SLURM_QOS'"; fi
+} > "$SLURM_ENV_FILE"
+echo "    Saved to $SLURM_ENV_FILE (sourced automatically by env.sh)."
+
 echo ""
 echo "=== Setup complete ==="
 echo ""
