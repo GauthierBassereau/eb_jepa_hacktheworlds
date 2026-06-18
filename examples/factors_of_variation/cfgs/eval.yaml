@@ -1,0 +1,26 @@
+# Stress-test (perturbation sweep) config for eval.py.
+# The planner is reused from the ac_video_jepa two_rooms recipe.
+plan_cfg_path: examples/ac_video_jepa/cfgs/planning/two_rooms/planning_mppi.yaml
+num_episodes: 20
+n_parallel: 10          # batch episodes per MPPI call (1 = sequential / most faithful)
+n_allowed_steps: 200
+level: normal
+
+# Each grid point overrides a WallDatasetConfig field at EVAL time only (the trained
+# checkpoint is fixed). Add factors/severities freely (dot_std, wall_width, door_space, ...).
+grid:
+  - {label: baseline,      data: {}}
+
+  - {label: dot_std_2.0,   data: {dot_std: 2.0}}
+  - {label: dot_std_2.5,   data: {dot_std: 2.5}}
+  - {label: dot_std_3.0,   data: {dot_std: 3.0}}
+  - {label: dot_std_3.5,   data: {dot_std: 3.5}}
+
+  - {label: wall_width_4,  data: {wall_width: 4}}
+  - {label: wall_width_5,  data: {wall_width: 5}}
+  - {label: wall_width_6,  data: {wall_width: 6}}
+  - {label: wall_width_7,  data: {wall_width: 7}}
+
+  - {label: door_space_3,  data: {door_space: 3}}
+  - {label: door_space_2,  data: {door_space: 2}}
+  - {label: door_space_1,  data: {door_space: 1}}

@@ -1525,6 +1525,21 @@ new environment. \textbf{Files:} adapt one of those suites' envs to the
 \textbf{Metric:} a success-vs-perturbation curve against the Two Rooms baseline, and
 which regularizer term must be strengthened as the world gets harder. Ambitious but
 high-signal: it tells you where the toy recipe actually ends.
+\smallskip
+\textbf{poc:} the minimal Two Rooms recipe is zero-shot \emph{robust} to appearance
+(dot blur: \textbf{0} degradation) and wall thickness, but planning \emph{collapses as the
+door narrows}: \textbf{100\%$\to$40\%$\to$0\%} success at door half-gap $4\to2\to1$ (3 seeds,
+MPPI). Controls confirm a genuine world-model deficit, not task or perception hardness: a
+true-state oracle solves \textbf{100\%} at every width (random \textbf{0\%}), and the failure
+persists under $8\times$ planner budget and a dot shrunk to fit the gap. Mechanistically it
+does \emph{not} track position-probe or rollout error (both worst for the \emph{benign} blur
+factor) but co-occurs with an encoder representation rank collapse that VICReg's
+per-dimension variance misses; correspondingly it is \emph{not} a loss-weighting knob ---
+strengthening any regularizer term backfires (an inverted-U around the default). The one
+lever that helps is encoder \emph{capacity} (door$=$2: \textbf{40\%$\to$78\%} as \code{dstc}
+$32\to256$), yet even $8\times$ capacity never recovers the narrowest door --- the toy
+recipe's fragility is a representational-capacity limit, not a tuning knob.
+\emph{Data:} Two Rooms, generated online (no dataset path).
 \end{trackbox}
 
 \begin{trackbox}{Track 14 --- Does intuitive physics emerge? \hfill \diffmed{}}

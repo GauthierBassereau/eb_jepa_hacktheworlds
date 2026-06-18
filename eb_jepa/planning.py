@@ -172,7 +172,7 @@ def _diagnose_world_model(agent, env, obs):
     position vs what the env would actually do (move / wall-stay). Localises the
     0%-success failure: model (wrong/zero predicted deltas) vs optimisation."""
     device = agent.device
-    cs = env.cell_size
+    cs = getattr(env, "cell_size", 1)  # maze-only attr; 1 for grid-free envs (two_rooms)
     obs_tensor = (
         env.normalizer.normalize_state(
             obs.detach().clone().to(dtype=torch.float32, device=device)
@@ -259,7 +259,7 @@ def main_eval(
     task_spec = plan_cfg.get("task_specification", {})
     waypoint_mode = task_spec.get("waypoint_mode", False)
     waypoint_spacing = task_spec.get("waypoint_spacing", 4)
-    waypoint_reach = task_spec.get("waypoint_reach_cells", 1.5) * env.cell_size
+    waypoint_reach = task_spec.get("waypoint_reach_cells", 1.5) * getattr(env, "cell_size", 1)
     waypoint_action_prior = task_spec.get("waypoint_action_prior", False)
     stall_escape = task_spec.get("stall_escape", False)
     stall_patience = int(task_spec.get("stall_patience", 3))
@@ -390,7 +390,7 @@ def main_eval(
                 .unsqueeze(0)
                 .unsqueeze(2)
             )  # Unsqueeze the batch and time dimensions : C H W -> 1 C 1 H W
-            cell_before = env.agent_cell.copy()
+            cell_before = env.agent_cell.copy() if hasattr(env, "agent_cell") else None
             astar_act = (
                 env.astar_action_from_current()
                 if (stall_escape and stall_count >= stall_patience)

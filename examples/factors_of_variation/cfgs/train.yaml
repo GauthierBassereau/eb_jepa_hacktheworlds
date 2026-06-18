@@ -1,0 +1,59 @@
+logging:
+  log_wandb: true
+  wandb_group:
+  log_every: 10
+  save_every_n_epochs: 1
+  tqdm_silent: false
+meta:
+  model_folder:
+  load_model: true
+  seed: 1
+data:
+  env_name: two_rooms
+  batch_size: 384
+  num_workers: 4          # val_loader only — train data is generated on the GPU stream
+  pin_mem: true
+  persistent_workers: false
+  # GB200-optimal: generate trajectories on a dedicated CUDA stream. Switch to
+  # `mode: online` (CPU per-batch) on a machine without a strong GPU.
+  pipeline:
+    mode: stream
+    backend: gpu
+    chunk_size: 3840
+    gen_batch_size: null
+    dtype: bfloat16
+training:
+  use_amp: true
+  dtype: bfloat16
+model:
+  compile: true
+  dobs: 2
+  henc: 32
+  hpre: 32
+  dstc: 32              # encoder capacity — raise (64/128/256) for the capacity study
+  nsteps: 8
+  encoder_architecture: impala
+  train_rollout: last
+  encoder_skip_connections: True
+  predictor_skip_connections: True
+  regularizer:
+    cov_coeff: 8
+    std_coeff: 16
+    sim_coeff_t: 12
+    idm_coeff: 1
+    first_t_only: False
+    spatial_as_samples: false
+    use_proj: false
+    idm_after_proj: false
+    sim_t_after_proj: false
+optim:
+  epochs: 12
+  lr: 0.001
+  grad_clip_enc: 2.0
+  grad_clip_pred: 2.0
+  weight_decay: 1.e-5
+
+# Used with --full-sweep (examples/launch_sbatch.py): the 3-seed baseline.
+sweep:
+  param_grid:
+    meta.seed: [1, 1000, 10000]
