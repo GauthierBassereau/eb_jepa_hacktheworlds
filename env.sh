@@ -43,3 +43,38 @@ export EBJEPA_DSETS=${EBJEPA_DSETS:-$WORK/datasets}
 
 # W&B: export WANDB_DISABLED=true before sourcing to turn off logging cluster-wide
 export WANDB_DISABLED=${WANDB_DISABLED:-false}
+
+# --- SLURM defaults for the HTW cluster (GB200 / Grace-Blackwell nodes) --------------
+# These feed examples/launch_sbatch.py. Override any of them by exporting the same var
+# before sourcing this file (so the launcher stays portable to other clusters).
+export EBJEPA_SLURM_PARTITION=${EBJEPA_SLURM_PARTITION:-defq}
+export EBJEPA_SLURM_GPUS=${EBJEPA_SLURM_GPUS:-1}
+export EBJEPA_SLURM_CPUS=${EBJEPA_SLURM_CPUS:-8}
+export EBJEPA_SLURM_TIME_MIN=${EBJEPA_SLURM_TIME_MIN:-120}
+# GB200 nodes carry large Grace LPDDR (~480 GB per superchip, ~240 GB/GPU). Request a
+# generous slice per GPU; lower it with `scontrol show node <node>` (RealMemory) if jobs
+# stay PENDING on memory.
+export EBJEPA_SLURM_MEM=${EBJEPA_SLURM_MEM:-220G}
+
+# Per-user SLURM account & QOS.
+# Resolution order: value already in the environment  >  the persisted per-user file
+# (written once by setup.sh)  >  SLURM auto-detection via sacctmgr. If nothing is found
+# they stay empty, and launch_sbatch simply omits --account/--qos (SLURM then uses your
+# own defaults). This keeps shells non-interactive; the prompt only happens in setup.sh.
+EBJEPA_SLURM_USER_ENV=${EBJEPA_SLURM_USER_ENV:-$WORK/.eb_jepa_slurm.env}
+[ -f "$EBJEPA_SLURM_USER_ENV" ] && source "$EBJEPA_SLURM_USER_ENV"
+
+if [ -z "${EBJEPA_SLURM_CONFIGURED:-}" ]; then
+    if [ -z "${EBJEPA_SLURM_ACCOUNT:-}" ] && command -v sacctmgr >/dev/null 2>&1; then
+        _eb_acct=$(sacctmgr -nP show user "$USER" format=DefaultAccount 2>/dev/null | grep -v '^$' | head -1)
+        [ -z "$_eb_acct" ] && _eb_acct=$(sacctmgr -nP show assoc user="$USER" format=Account 2>/dev/null | grep -v '^$' | head -1)
+        [ -n "$_eb_acct" ] && export EBJEPA_SLURM_ACCOUNT="$_eb_acct"
+    fi
+    if [ -z "${EBJEPA_SLURM_QOS:-}" ] && command -v sacctmgr >/dev/null 2>&1; then
+        _eb_qos=$(sacctmgr -nP show assoc user="$USER" format=QOS 2>/dev/null | tr ',' '\n' | grep -v '^$' | head -1)
+        [ -n "$_eb_qos" ] && export EBJEPA_SLURM_QOS="$_eb_qos"
+    fi
+fi
+# Export whatever we resolved (possibly empty -> omitted by the launcher).
+export EBJEPA_SLURM_ACCOUNT=${EBJEPA_SLURM_ACCOUNT:-}
+export EBJEPA_SLURM_QOS=${EBJEPA_SLURM_QOS:-}
