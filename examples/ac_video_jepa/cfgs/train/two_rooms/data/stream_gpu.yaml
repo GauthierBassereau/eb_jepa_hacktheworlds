@@ -1,0 +1,22 @@
+# Stream pipeline — GPU backend (Pack 7).
+# A dedicated CUDA stream generates chunks of samples on-GPU (vectorised physics
+# + rendering), overlapping with the main training stream.
+# Much faster than CPU generation on large GPU nodes; no CPU worker pool needed.
+#
+# Tuning:
+#   chunk_size: samples per swap. Must divide epoch_size // batch_size evenly.
+#   gen_batch_size: number of trajectories generated per GPU kernel call.
+#     Larger = fewer kernel launches but more VRAM. Defaults to chunk_size.
+#   dtype: output dtype for the generated chunk.
+data:
+  env_name: two_rooms
+  batch_size: 384
+  num_workers: 4       # val_loader only
+  pin_mem: true
+  persistent_workers: false
+  pipeline:
+    mode: stream
+    backend: gpu
+    chunk_size: 3840
+    gen_batch_size: null   # null = use chunk_size
+    dtype: bfloat16

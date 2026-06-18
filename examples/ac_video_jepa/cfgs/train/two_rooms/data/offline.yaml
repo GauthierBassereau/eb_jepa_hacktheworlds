@@ -1,0 +1,37 @@
+# Offline pipeline (Pack 8): read pre-generated memmaps from disk.
+#
+# Step 1 — Pre-generate the dataset once (GPU):
+#   python -m eb_jepa.datasets.two_rooms.offline_dataset \
+#     --data-dir /path/to/dataset \
+#     --num-samples 1200000 \
+#     --backend gpu
+#
+# Step 2 — Train with this config, pointing data_dir at the output of step 1.
+#
+# Default = offline-STREAM: the pre-generated dataset is read through the
+# double-buffered VRAM stream pipeline in small sequential chunks, exactly like
+# the online `stream` mode but sourcing bytes from disk instead of generating
+# them. This is the fast path. Feeding a whole epoch as one chunk (e.g.
+# chunk_size = epoch_size) degenerates the pipeline — no read/compute overlap
+# and a huge non-overlappable copy+pin+H2D every epoch — so keep chunk_size
+# small (a few thousand). chunk_size=9600 (25 batches) keeps the GPU at the
+# compute floor while each ~2.75 GB chunk read hides behind compute.
+#
+# To use the legacy per-sample random-access DataLoader instead (slow on
+# Lustre — ~1.2M scattered reads per epoch), set `stream: false`.
+data:
+  env_name: two_rooms
+  batch_size: 384
+  num_workers: 4       # val_loader only; the train pipeline does its own reads
+  pin_mem: true
+  persistent_workers: false
+  pipeline:
+    mode: offline
+    stream: true
+    data_dir: /path/to/dataset   # <-- set to your pre-generated dataset directory
+    chunk_size: 9600   # 25 batches × 384; keep small so reads overlap compute
+    dtype: bfloat16
+    # --- optional tuning (cold-cache / disk-bound only) ---
+    read_workers: 1    # >1: fan each chunk read over N threads (parallel I/O)
+    prefetch_depth: 1  # >1: keep N chunks staging continuously (DeepPrefetchManager)
+    shuffle: false     # false: in-order traversal; true: per-epoch block shuffle

@@ -46,7 +46,7 @@ logger = get_logger(__name__)
 
 
 def run(
-    fname: str = "examples/ac_video_jepa/cfgs/train.yaml",
+    fname: str = "examples/ac_video_jepa/cfgs/train/two_rooms/train.yaml",
     cfg=None,
     folder=None,
     **overrides,

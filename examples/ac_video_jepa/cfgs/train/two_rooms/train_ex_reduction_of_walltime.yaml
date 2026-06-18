@@ -1,0 +1,69 @@
+# Walltime-reduced variant of train.yaml.
+# Same model, same optimizer, same training dynamics — only the training loop
+# overhead is reduced. Safe to swap in for train.yaml without any other change.
+#
+# What differs from train.yaml:
+#   - enable_plan_eval: false  — disables in-training plan evals (~7h savings on 12 epochs)
+#   - log_every: 100           — 10x less frequent logging
+#   - save_every_n_epochs: 100 — no intermediate checkpoints (saves disk I/O)
+#   - tqdm_silent: true        — no per-step progress bar
+#   - num_workers: 24          — more DataLoader workers (adjust to CPU count)
+#   - prefetch_factor: 4       — DataLoader prefetch queue depth
+#   - compile_mode: reduce-overhead — torch.compile with cudagraphs (~20% extra speedup)
+#   non_blocking GPU transfers are enabled unconditionally in main.py when pin_mem: true.
+logging:
+  log_wandb: true
+  wandb_group:
+  wandb_sweep:
+  log_every: 100
+  exp_suffix: walltime
+  save_every_n_epochs: 100
+  tqdm_silent: true
+meta:
+  model_folder:
+  load_model: true
+  enable_plan_eval: false
+  eval_every_itr: -1
+  light_eval_freq: 50
+  seed: 1
+data:
+  env_name: two_rooms
+  batch_size: 384
+  num_workers: 24
+  pin_mem: true
+  persistent_workers: true
+  prefetch_factor: 4
+training:
+  use_amp: true
+  dtype: bfloat16
+model:
+  compile: true
+  compile_mode: reduce-overhead
+  dobs: 2
+  henc: 32
+  hpre: 32
+  dstc: 32
+  nsteps: 8
+  encoder_architecture: impala
+  train_rollout: last
+  encoder_skip_connections: True
+  predictor_skip_connections: True
+  regularizer:
+    cov_coeff: 8
+    std_coeff: 16
+    sim_coeff_t: 12
+    idm_coeff: 1
+    first_t_only: False
+    spatial_as_samples: false
+    use_proj: false
+    idm_after_proj: false
+    sim_t_after_proj: false
+optim:
+  epochs: 12
+  lr: 0.001
+  grad_clip_enc: 2.0
+  grad_clip_pred: 2.0
+  weight_decay: 1.e-5
+eval:
+  plan_cfg_path: examples/ac_video_jepa/cfgs/planning/two_rooms/planning_mppi.yaml
+  eval_cfg_path: examples/ac_video_jepa/cfgs/eval/two_rooms/eval.yaml

@@ -92,7 +92,7 @@ EXAMPLE_CONFIGS = {
         "metric": "AP_1",
     },
     "ac_video_jepa": {
-        "config": "examples/ac_video_jepa/cfgs/train.yaml",
+        "config": "examples/ac_video_jepa/cfgs/train/two_rooms/train.yaml",
         "module": "examples.ac_video_jepa.main",
         "metric": "success_rate",
     },

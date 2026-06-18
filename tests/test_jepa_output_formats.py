@@ -61,9 +61,9 @@ def create_ac_video_jepa_model(device="cpu", img_size=65):
     """
     Create an Action-Conditioned Video JEPA model matching the
     architecture from examples/ac_video_jepa/main.py with default
-    config from examples/ac_video_jepa/cfgs/train.yaml.
+    config from examples/ac_video_jepa/cfgs/train/two_rooms/train.yaml.
     """
-    # Config values from examples/ac_video_jepa/cfgs/train.yaml
+    # Config values from examples/ac_video_jepa/cfgs/train/two_rooms/train.yaml
     dobs = 2  # Input channels (RGB + position = 2 channels for two_rooms)
     henc = 32  # Hidden dimension in encoder
     dstc = 32  # Output representation dimension

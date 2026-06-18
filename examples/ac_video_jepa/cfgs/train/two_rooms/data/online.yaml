@@ -1,0 +1,11 @@
+# Online data pipeline: on-the-fly CPU generation, standard DataLoader.
+# No extra config needed — each worker calls WallDataset.generate_multistep_sample().
+# Suitable for quick experiments or when CPU generation is fast enough.
+data:
+  env_name: two_rooms
+  batch_size: 384
+  num_workers: 4
+  pin_mem: true
+  persistent_workers: false
+  pipeline:
+    mode: online

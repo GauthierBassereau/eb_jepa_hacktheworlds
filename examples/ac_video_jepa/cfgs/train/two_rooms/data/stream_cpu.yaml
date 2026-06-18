@@ -1,0 +1,22 @@
+# Stream pipeline — CPU backend (Pack 5).
+# A pool of CPU worker processes continuously generates chunks of samples.
+# Two chunks are double-buffered in GPU VRAM; a swap occurs every
+# chunk_size // batch_size training steps.
+#
+# Tuning:
+#   chunk_size: samples per swap. Must divide epoch_size // batch_size evenly.
+#   num_gen_workers: CPU cores dedicated to generation. Leave a few for the main
+#     process and OS (rule of thumb: --cpus-per-task - 4).
+#   dtype: cast samples immediately in workers to halve worker RAM usage.
+data:
+  env_name: two_rooms
+  batch_size: 384
+  num_workers: 4       # val_loader only; train_loader is handled by the pipeline
+  pin_mem: true
+  persistent_workers: false
+  pipeline:
+    mode: stream
+    backend: cpu
+    chunk_size: 3840   # 10 batches × 384; tune to generation throughput
+    num_gen_workers: 16
+    dtype: bfloat16
