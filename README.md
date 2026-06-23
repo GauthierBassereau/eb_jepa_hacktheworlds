@@ -45,6 +45,124 @@
 
 ---
 
+## 🩺 Hackathon: Surgical JEPA
+
+For the hackathon, our team tried to turn the AC-JEPA example into a small
+surgical world model. The idea was simple: take wrist-camera video from a robot,
+encode it into a latent state, condition the predictor on proprioception, and see
+whether EB-JEPA can roll the scene forward without reconstructing pixels during
+training.
+
+We used the
+[`PhysicalAI-Robotics-Open-H-Embodiment`](https://huggingface.co/datasets/nvidia/PhysicalAI-Robotics-Open-H-Embodiment)
+dataset, specifically `Surgical/hamlyn/suturing_2`. Each sample is a 17-frame
+RGB wrist-camera clip sampled at 5 fps, resized to 128x128. The conditioning
+vector is 32-D: `[proprio_t, proprio_t+1]`, with 16-D bimanual Cartesian
+proprioception on each side. Complete episodes are held out, and normalization
+statistics are fit only on the remaining train episodes.
+
+The work is intentionally split between reusable library changes and the actual
+experiment code:
+
+- `eb_jepa/datasets/open_h` adds a LeRobot v2.1 reader without depending on
+  LeRobot itself. It reads the episode metadata, Parquet proprioception tables,
+  and MP4 videos directly, canonicalizes quaternions, decodes exact frames with
+  TorchCodec or OpenCV, and returns tensors in the AC-JEPA `[C,T,H,W]` /
+  `[A,T]` convention.
+- `eb_jepa/jepa.py` now lets sequence predictors start autoregressive rollout
+  from one real frame and grow their context window as predictions are appended.
+- `eb_jepa/architectures.py` adds a LeWorldModel-style causal Transformer
+  predictor with AdaLN-Zero action conditioning, plus a DINOv3 ConvNeXt encoder
+  that projects patch tokens back into the standard `[B,D,T,1,1]` latent format.
+- `examples/surgical_jepa` contains the hackathon pipeline: dataset smoke tests,
+  JEPA training configs, RGB decoder training, LPIPS evaluation, rollout videos,
+  coefficient notes, and an inference benchmark.
+
+<p align="center">
+  <img src="docs/eval_ep15.gif" alt="Surgical JEPA rollout at epoch 15" width="776">
+  <br>
+  <i>Best run at epoch 15: ground truth, autoregressive rollout, and clean-context prediction.</i>
+</p>
+
+### What we tried
+
+The baseline is close to the existing AC-JEPA setup: an IMPALA encoder, a GRU
+latent predictor, VC/IDM anti-collapse regularization, and 8-step autoregressive
+training. We then tried two bigger changes:
+
+- **Transformer predictor:** a compact 4-layer causal Transformer, conditioned
+  by embedded proprioception with AdaLN-Zero. During rollout it starts from one
+  real latent and can use up to four previous predicted latents.
+- **DINOv3 encoder:** `facebook/dinov3-convnext-tiny-pretrain-lvd1689m` as the
+  image encoder, with a learned projection from ConvNeXt patch tokens into the
+  EB-JEPA latent. The pretrained backbone has its own smaller learning rate.
+
+Pixels are only used after JEPA training. We freeze the JEPA, train a small RGB
+decoder on its latents, then evaluate rollouts in pixel space with LPIPS. The
+evaluation reports both fully autoregressive predictions and clean-context
+predictions; the gap between them is a useful proxy for compounding error.
+
+### Ablations
+
+The table below is copied from [`docs/ablations.xlsx`](docs/ablations.xlsx).
+Lower LPIPS is better. `Gap Clean/AR` is the extra LPIPS paid by using generated
+latent context instead of clean encoded context, so lower is also better.
+`Mean perf. change` is the spreadsheet's relative average vs. the baseline
+across AR LPIPS, gap, and the horizon LPIPS columns; positive means better than
+baseline.
+
+| Run | AR LPIPS ↓ | Gap Clean/AR ↓ | LPIPS @ 0.2s ↓ | LPIPS @ 1s ↓ | LPIPS @ 2s ↓ | Mean perf. change |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Collapse (no reg term) | 0.575 | 0.026 | 0.549 | 0.550 | 0.587 | - |
+| Baseline (EB-JEPA) | 0.470 | 0.020 | 0.446 | 0.448 | 0.480 | - |
+| `W_Cov=0` | 0.507 | 0.010 | 0.495 | 0.497 | 0.512 | +2.7% |
+| `W_Std=0` | 0.530 | 0.009 | 0.519 | 0.520 | 0.536 | -0.4% |
+| `W_Sim=0` | 0.465 | 0.026 | 0.435 | 0.438 | 0.478 | -4.8% |
+| `W_Idm=0` | 0.476 | 0.021 | 0.450 | 0.454 | 0.488 | -2.0% |
+| DINOv3 Encoder | 0.478 | 0.014 | 0.450 | 0.466 | 0.475 | +4.7% |
+| Transformer Predictor | 0.476 | 0.007 | 0.435 | 0.438 | 0.450 | +14.9% |
+
+What we take from this:
+
+- The no-regularization run collapses badly enough to make the point: AR LPIPS
+  goes from `0.470` to `0.575`.
+- Removing temporal similarity gives the best raw mean AR LPIPS (`0.465`) and
+  strong short-horizon numbers, but it increases the clean/AR gap. That looks
+  like a nicer one-step model, not necessarily a safer rollout model.
+- The Transformer predictor is the coolest result. It does not win on mean AR
+  LPIPS, but it cuts the compounding gap from `0.020` to `0.007` and improves
+  LPIPS at 2 seconds from `0.480` to `0.450`.
+- DINOv3 helped the gap but was not a free win on the horizon metrics. With more
+  tuning it might still be worth revisiting, but for this hackathon the
+  Transformer change is the cleaner story.
+
+To reproduce the pipeline, first update `data.data_root` in the selected config.
+
+```bash
+# Check the dataset and generate sample previews
+uv run python -m examples.surgical_jepa.test_dataset --num-previews 3
+
+# Train the IMPALA + GRU baseline
+uv run python examples/surgical_jepa/main.py \
+  --fname examples/surgical_jepa/train.yaml
+
+# Other variants we tested
+uv run python examples/surgical_jepa/main.py \
+  --fname examples/surgical_jepa/train_transformer.yaml
+uv run python examples/surgical_jepa/main.py \
+  --fname examples/surgical_jepa/train_ConvNeXt.yaml
+
+# Train the RGB decoder from a JEPA checkpoint
+uv run python examples/surgical_jepa/train_decoder.py \
+  --jepa_checkpoint /path/to/jepa/best.pth.tar
+
+# Evaluate decoded rollouts
+uv run python examples/surgical_jepa/evaluation.py \
+  --checkpoint /path/to/decoder/best.pth.tar
+```
+
+---
+
 ## 📚 Examples
 
 ### [Image JEPA](examples/image_jepa/README.md)
@@ -67,55 +185,6 @@ JEPA for world modeling + planning in Two Rooms environment.
 |------------------|-----------------|
 | <img src="examples/ac_video_jepa/assets/top_randw_agent_steps_succ.gif" alt="Successful planning episode" width="155" /> | <img src="examples/ac_video_jepa/assets/top_randw_state.png" alt="Episode task definition" width="300" /> |
 | *Successful planning episode* | *From init to goal state* |
-
-### Surgical JEPA — Hackathon contribution
-
-We adapted AC-JEPA to the [`PhysicalAI-Robotics-Open-H-Embodiment`](https://huggingface.co/datasets/nvidia/PhysicalAI-Robotics-Open-H-Embodiment) dataset, using the `Surgical/hamlyn/suturing_2` subset. The contribution includes a LeRobot v2.1 video/proprioception loader with episode-level holdout, an autoregressive latent world model, IMPALA-GRU and causal Transformer variants, and an RGB decoder for pixel-space evaluation. Rollouts are evaluated on held-out episodes with LPIPS, both autoregressively and with clean context.
-
-Only small, reusable changes were made to the main `eb_jepa` library: sequence predictors can now start from one real frame and progressively fill their existing autoregressive context window, and we added a causal action-conditioned Transformer predictor and a DINOv3 ConvNeXt encoder. The rest of the work is isolated in `examples/surgical_jepa`, including dataset preparation, training configs, decoder training, evaluation, visualizations, coefficient sweeps, and SLURM launchers.
-
-<p align="center">
-  <img src="figures/eval_ep15.gif" alt="Surgical JEPA rollout at epoch 15" width="776">
-  <br>
-  <i>Best run at epoch 15: ground truth, autoregressive rollout, and clean-context prediction.</i>
-</p>
-
-The configs and implementation are in [`examples/surgical_jepa`](examples/surgical_jepa/). Before running, update `data.data_root` in the selected training config.
-
-```bash
-# Check the dataset and generate a few sample previews
-uv run python -m examples.surgical_jepa.test_dataset --num-previews 3
-
-# Train the IMPALA + GRU baseline
-uv run python examples/surgical_jepa/main.py \
-  --fname examples/surgical_jepa/train.yaml
-
-# Other tested variants
-uv run python examples/surgical_jepa/main.py \
-  --fname examples/surgical_jepa/train_transformer.yaml
-uv run python examples/surgical_jepa/main.py \
-  --fname examples/surgical_jepa/train_ConvNeXt.yaml
-
-# Train the RGB decoder from a JEPA checkpoint
-uv run python examples/surgical_jepa/train_decoder.py \
-  --jepa_checkpoint /path/to/jepa/best.pth.tar
-
-# Evaluate decoded rollouts
-uv run python examples/surgical_jepa/evaluation.py \
-  --checkpoint /path/to/decoder/best.pth.tar
-```
-
-Equivalent SLURM launchers are provided:
-
-```bash
-sbatch slurm_surgical_train.sh examples/surgical_jepa/train.yaml
-sbatch slurm_surgical_decoder.sh /path/to/jepa/best.pth.tar
-sbatch slurm_surgical_evaluation.sh /path/to/decoder/best.pth.tar
-```
-
-Two self-contained JEPA + decoder checkpoints are included:
-[`baseline_eb_jepa.tar`](checkpoints/baseline_eb_jepa.tar) and
-[`transformer.tar`](checkpoints/transformer.tar). They can be passed directly to the evaluation command above.
 
 ---
 
