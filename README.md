@@ -4,7 +4,6 @@ This repository is our hackathon fork of
 [EB-JEPA](https://github.com/Trick5t3r/eb_jepa), the open-source library from
 the paper
 [A Lightweight Library for Energy-Based Joint-Embedding Predictive Architectures](https://arxiv.org/abs/2602.03604).
-We built this during the [HackTheWorld(s) hackathon setup used in this repo](setup.md).
 
 The goal was not to make another generic EB-JEPA example. We wanted to see if
 the action-conditioned video JEPA setup could become a small surgical world
@@ -129,13 +128,6 @@ uv run python examples/surgical_jepa/train_decoder.py \
 uv run python examples/surgical_jepa/evaluation.py \
   --checkpoint /path/to/decoder/best.pth.tar
 ```
-
-## Pointers
-
-- Hackathon setup notes: [`setup.md`](setup.md)
-- Main code: [`examples/surgical_jepa`](examples/surgical_jepa)
-- Open-H dataset loader: [`eb_jepa/datasets/open_h`](eb_jepa/datasets/open_h)
-- Ablation sheet: [`docs/ablations.xlsx`](docs/ablations.xlsx)
 
 ## Citation
 
