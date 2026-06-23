@@ -409,6 +409,214 @@ class ImpalaEncoder(nn.Module):
         return features
 
 
+class DINOv3ConvNextEncoder(nn.Module):
+    """Pretrained DINOv3 ConvNeXt encoder with a learned spatial bottleneck.
+
+    The official backbone returns one global token followed by flattened
+    spatial tokens. We discard the global token, preserve all spatial tokens
+    through a learned projection, and return the repository's standard
+    ``[B,D,T,1,1]`` latent format.
+    """
+
+    def __init__(
+        self,
+        model_name: str,
+        input_shape: tuple[int, int, int],
+        latent_dim: int = 768,
+        image_mean: tuple[float, float, float] = (
+            0.485,
+            0.456,
+            0.406,
+        ),
+        image_std: tuple[float, float, float] = (
+            0.229,
+            0.224,
+            0.225,
+        ),
+        frame_batch_size: int | None = 128,
+        local_files_only: bool = False,
+        revision: str | None = None,
+        gradient_checkpointing: bool = False,
+        load_pretrained: bool = True,
+    ):
+        super().__init__()
+        try:
+            from transformers import (
+                AutoModel,
+                DINOv3ConvNextConfig,
+                DINOv3ConvNextModel,
+            )
+        except ImportError as error:  # pragma: no cover - dependency error.
+            raise ImportError(
+                "DINOv3ConvNextEncoder requires `transformers`. "
+                "Install the project dependencies with `uv sync`."
+            ) from error
+
+        if input_shape[0] != 3:
+            raise ValueError(
+                "DINOv3 ConvNeXt expects RGB input, got " f"input_shape={input_shape}"
+            )
+        if frame_batch_size is not None and frame_batch_size <= 0:
+            raise ValueError("frame_batch_size must be positive or null")
+
+        load_kwargs = {"local_files_only": local_files_only}
+        if revision is not None:
+            load_kwargs["revision"] = revision
+        if load_pretrained:
+            self.backbone = AutoModel.from_pretrained(model_name, **load_kwargs)
+        else:
+            if model_name != "facebook/dinov3-convnext-tiny-pretrain-lvd1689m":
+                raise ValueError(
+                    "Offline architecture construction is only defined for "
+                    "facebook/dinov3-convnext-tiny-pretrain-lvd1689m"
+                )
+            self.backbone = DINOv3ConvNextModel(
+                DINOv3ConvNextConfig(image_size=input_shape[1])
+            )
+        if gradient_checkpointing:
+            if not self.backbone.supports_gradient_checkpointing:
+                raise ValueError(
+                    "The Transformers DINOv3 ConvNeXt implementation does not "
+                    "support gradient checkpointing"
+                )
+            self.backbone.gradient_checkpointing_enable()
+
+        self.model_name = model_name
+        self.input_shape = tuple(input_shape)
+        self.mlp_output_dim = int(latent_dim)
+        self.frame_batch_size = frame_batch_size
+        self.register_buffer(
+            "image_mean",
+            torch.tensor(image_mean, dtype=torch.float32).view(1, 3, 1, 1),
+            persistent=True,
+        )
+        self.register_buffer(
+            "image_std",
+            torch.tensor(image_std, dtype=torch.float32).view(1, 3, 1, 1),
+            persistent=True,
+        )
+
+        was_training = self.backbone.training
+        self.backbone.eval()
+        with torch.no_grad():
+            dummy = torch.zeros(1, *self.input_shape)
+            patch_tokens = self._extract_patch_tokens(self._normalize(dummy))
+        self.backbone.train(was_training)
+
+        self.patch_token_shape = tuple(patch_tokens.shape[1:])
+        flattened_dim = patch_tokens[0].numel()
+        self.spatial_projection = nn.Linear(flattened_dim, self.mlp_output_dim)
+        self.final_ln = nn.LayerNorm(self.mlp_output_dim)
+        init_module_weights(self.spatial_projection)
+        init_module_weights(self.final_ln)
+
+        self._trainable_backbone_stages = 0
+        self.set_trainable_backbone_stages(0)
+
+    def _normalize(self, frames: torch.Tensor) -> torch.Tensor:
+        mean = self.image_mean.to(device=frames.device, dtype=frames.dtype)
+        std = self.image_std.to(device=frames.device, dtype=frames.dtype)
+        return (frames - mean) / std
+
+    def _extract_patch_tokens(self, frames: torch.Tensor) -> torch.Tensor:
+        output = self.backbone(pixel_values=frames, return_dict=True)
+        tokens = output.last_hidden_state
+        if tokens.ndim != 3 or tokens.shape[1] < 2:
+            raise ValueError(
+                "Expected DINOv3 ConvNeXt tokens [B,1+P,C], got "
+                f"{tuple(tokens.shape)}"
+            )
+        return tokens[:, 1:]
+
+    def backbone_parameters(self):
+        return self.backbone.parameters()
+
+    def head_parameters(self):
+        yield from self.spatial_projection.parameters()
+        yield from self.final_ln.parameters()
+
+    @property
+    def num_backbone_stages(self) -> int:
+        return len(self.backbone.model.stages)
+
+    @property
+    def trainable_backbone_stages(self) -> int:
+        return self._trainable_backbone_stages
+
+    def set_trainable_backbone_stages(self, num_stages: int) -> bool:
+        """Freeze the backbone except for its final ``num_stages`` stages."""
+        if not 0 <= num_stages <= self.num_backbone_stages:
+            raise ValueError(
+                f"num_stages must be in [0,{self.num_backbone_stages}], "
+                f"got {num_stages}"
+            )
+        changed = num_stages != self._trainable_backbone_stages
+        for parameter in self.backbone.parameters():
+            parameter.requires_grad_(False)
+        if num_stages:
+            for stage in self.backbone.model.stages[-num_stages:]:
+                for parameter in stage.parameters():
+                    parameter.requires_grad_(True)
+            for parameter in self.backbone.layer_norm.parameters():
+                parameter.requires_grad_(True)
+        self._trainable_backbone_stages = num_stages
+        self.train(self.training)
+        return changed
+
+    def train(self, mode: bool = True):
+        """Keep frozen ConvNeXt stages deterministic during JEPA training."""
+        super().train(mode)
+        if mode:
+            self.backbone.eval()
+            if self._trainable_backbone_stages:
+                for stage in self.backbone.model.stages[
+                    -self._trainable_backbone_stages :
+                ]:
+                    stage.train(True)
+                self.backbone.layer_norm.train(True)
+            self.spatial_projection.train(True)
+            self.final_ln.train(True)
+        return self
+
+    def forward(self, observations: torch.Tensor) -> torch.Tensor:
+        if observations.ndim != 5:
+            raise ValueError(
+                "Expected video [B,C,T,H,W], got " f"{tuple(observations.shape)}"
+            )
+        batch_size, channels, timesteps, height, width = observations.shape
+        expected = self.input_shape
+        if (channels, height, width) != expected:
+            raise ValueError(
+                f"Expected frame shape {expected}, got " f"{(channels, height, width)}"
+            )
+
+        frames = (
+            observations.permute(0, 2, 1, 3, 4)
+            .reshape(batch_size * timesteps, channels, height, width)
+            .contiguous()
+        )
+        chunk_size = self.frame_batch_size or frames.shape[0]
+        features = []
+        for chunk in frames.split(chunk_size):
+            patch_tokens = self._extract_patch_tokens(self._normalize(chunk))
+            if tuple(patch_tokens.shape[1:]) != self.patch_token_shape:
+                raise ValueError(
+                    "DINOv3 patch-token geometry changed from "
+                    f"{self.patch_token_shape} to "
+                    f"{tuple(patch_tokens.shape[1:])}"
+                )
+            projected = self.spatial_projection(patch_tokens.flatten(1))
+            features.append(self.final_ln(projected))
+        features = torch.cat(features, dim=0)
+        return (
+            features.view(batch_size, timesteps, self.mlp_output_dim)
+            .transpose(1, 2)
+            .unsqueeze(-1)
+            .unsqueeze(-1)
+            .contiguous()
+        )
+
+
 class RNNPredictor(nn.Module):
     """GRU-based predictor for single-step state propagation."""
 
@@ -452,6 +660,283 @@ class RNNPredictor(nn.Module):
         next_state = self.final_ln(next_state)
 
         return next_state[0].unsqueeze(-1).unsqueeze(-1).unsqueeze(-1)
+
+
+def _adaln_modulate(
+    x: torch.Tensor,
+    shift: torch.Tensor,
+    scale: torch.Tensor,
+) -> torch.Tensor:
+    """Apply adaptive LayerNorm scale and shift parameters."""
+    return x * (1 + scale) + shift
+
+
+class CausalSelfAttention(nn.Module):
+    """Pre-normalized causal self-attention used by the AR predictor."""
+
+    def __init__(
+        self,
+        dim: int,
+        heads: int = 8,
+        dim_head: int = 64,
+        dropout: float = 0.0,
+    ):
+        super().__init__()
+        inner_dim = heads * dim_head
+        self.heads = heads
+        self.dropout = float(dropout)
+        self.to_qkv = nn.Linear(dim, inner_dim * 3, bias=False)
+        self.to_out = nn.Sequential(
+            nn.Linear(inner_dim, dim),
+            nn.Dropout(dropout),
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        q, k, v = self.to_qkv(x).chunk(3, dim=-1)
+        q, k, v = (
+            tensor.view(tensor.shape[0], tensor.shape[1], self.heads, -1)
+            .transpose(1, 2)
+            .contiguous()
+            for tensor in (q, k, v)
+        )
+        output = F.scaled_dot_product_attention(
+            q,
+            k,
+            v,
+            dropout_p=self.dropout if self.training else 0.0,
+            is_causal=True,
+        )
+        output = output.transpose(1, 2).contiguous().flatten(2)
+        return self.to_out(output)
+
+
+class TransformerFeedForward(nn.Module):
+    """Transformer MLP without an internal norm.
+
+    Normalization is performed by the surrounding AdaLN block so the action
+    modulation is not immediately normalized away.
+    """
+
+    def __init__(self, dim: int, hidden_dim: int, dropout: float = 0.0):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(dim, hidden_dim),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(hidden_dim, dim),
+            nn.Dropout(dropout),
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.net(x)
+
+
+class ActionConditionedTransformerBlock(nn.Module):
+    """Causal transformer block with per-token AdaLN-Zero conditioning."""
+
+    def __init__(
+        self,
+        dim: int,
+        heads: int,
+        dim_head: int,
+        mlp_dim: int,
+        dropout: float = 0.0,
+    ):
+        super().__init__()
+        self.attention = CausalSelfAttention(
+            dim,
+            heads=heads,
+            dim_head=dim_head,
+            dropout=dropout,
+        )
+        self.mlp = TransformerFeedForward(dim, mlp_dim, dropout=dropout)
+        self.attention_norm = nn.LayerNorm(
+            dim,
+            elementwise_affine=False,
+            eps=1e-6,
+        )
+        self.mlp_norm = nn.LayerNorm(
+            dim,
+            elementwise_affine=False,
+            eps=1e-6,
+        )
+        self.adaln_modulation = nn.Sequential(
+            nn.SiLU(),
+            nn.Linear(dim, 6 * dim),
+        )
+
+        # AdaLN-Zero starts each residual branch as the identity and learns how
+        # strongly action conditioning should affect it.
+        nn.init.zeros_(self.adaln_modulation[-1].weight)
+        nn.init.zeros_(self.adaln_modulation[-1].bias)
+
+    def forward(self, x: torch.Tensor, condition: torch.Tensor) -> torch.Tensor:
+        (
+            attention_shift,
+            attention_scale,
+            attention_gate,
+            mlp_shift,
+            mlp_scale,
+            mlp_gate,
+        ) = self.adaln_modulation(condition).chunk(6, dim=-1)
+        attention_input = _adaln_modulate(
+            self.attention_norm(x),
+            attention_shift,
+            attention_scale,
+        )
+        x = x + attention_gate * self.attention(attention_input)
+        mlp_input = _adaln_modulate(
+            self.mlp_norm(x),
+            mlp_shift,
+            mlp_scale,
+        )
+        return x + mlp_gate * self.mlp(mlp_input)
+
+
+class ActionSequenceEncoder(nn.Module):
+    """Embed repo-format action sequences from ``[B,A,T]`` to ``[B,E,T]``."""
+
+    def __init__(
+        self,
+        action_dim: int,
+        embedding_dim: int,
+        smoothed_dim: int | None = None,
+        mlp_scale: float = 2.0,
+    ):
+        super().__init__()
+        smoothed_dim = smoothed_dim or action_dim
+        hidden_dim = max(embedding_dim, int(mlp_scale * embedding_dim))
+        self.embedding_dim = int(embedding_dim)
+        self.patch_embedding = nn.Conv1d(
+            action_dim,
+            smoothed_dim,
+            kernel_size=1,
+        )
+        self.embedding = nn.Sequential(
+            nn.Linear(smoothed_dim, hidden_dim),
+            nn.SiLU(),
+            nn.Linear(hidden_dim, embedding_dim),
+        )
+
+    def forward(self, actions: torch.Tensor) -> torch.Tensor:
+        if actions.ndim != 3:
+            raise ValueError(
+                "Actions must have shape [B,A,T], got " f"{tuple(actions.shape)}"
+            )
+        embedded = self.patch_embedding(actions.float()).transpose(1, 2)
+        return self.embedding(embedded).transpose(1, 2).contiguous()
+
+
+class ActionConditionedTransformerPredictor(nn.Module):
+    """LeWorldModel-style causal latent predictor with AdaLN-Zero actions.
+
+    The public interface follows the other predictors in this repository:
+    states are ``[B,D,T,1,1]`` and encoded actions are ``[B,C,T]``. The
+    predictor emits one next-latent prediction at every input timestep.
+    """
+
+    def __init__(
+        self,
+        state_dim: int,
+        condition_dim: int,
+        *,
+        hidden_dim: int,
+        depth: int,
+        heads: int,
+        dim_head: int = 64,
+        mlp_dim: int | None = None,
+        dropout: float = 0.0,
+        embedding_dropout: float = 0.0,
+        max_seq_len: int = 17,
+        history_size: int = 4,
+    ):
+        super().__init__()
+        if max_seq_len <= 0:
+            raise ValueError("max_seq_len must be positive")
+        if history_size <= 0:
+            raise ValueError("history_size must be positive")
+        if history_size > max_seq_len:
+            raise ValueError("history_size cannot exceed max_seq_len")
+        if heads <= 0 or dim_head <= 0:
+            raise ValueError("heads and dim_head must be positive")
+
+        self.state_dim = int(state_dim)
+        self.condition_dim = int(condition_dim)
+        self.max_seq_len = int(max_seq_len)
+        self.history_size = int(history_size)
+        self.context_length = self.history_size
+        self.initial_context_length = 1
+        self.supports_sequence_prediction = True
+        self.is_rnn = False
+
+        self.state_projection = (
+            nn.Linear(state_dim, hidden_dim)
+            if state_dim != hidden_dim
+            else nn.Identity()
+        )
+        self.condition_projection = (
+            nn.Linear(condition_dim, hidden_dim)
+            if condition_dim != hidden_dim
+            else nn.Identity()
+        )
+        self.position_embedding = nn.Parameter(torch.empty(1, max_seq_len, hidden_dim))
+        self.embedding_dropout = nn.Dropout(embedding_dropout)
+        self.blocks = nn.ModuleList(
+            ActionConditionedTransformerBlock(
+                hidden_dim,
+                heads=heads,
+                dim_head=dim_head,
+                mlp_dim=mlp_dim or 4 * hidden_dim,
+                dropout=dropout,
+            )
+            for _ in range(depth)
+        )
+        self.final_norm = nn.LayerNorm(hidden_dim)
+        self.output_projection = (
+            nn.Linear(hidden_dim, state_dim)
+            if hidden_dim != state_dim
+            else nn.Identity()
+        )
+        nn.init.normal_(self.position_embedding, std=0.02)
+
+    def forward(
+        self,
+        states: torch.Tensor,
+        actions: torch.Tensor,
+    ) -> torch.Tensor:
+        if states.ndim != 5:
+            raise ValueError(
+                "States must have shape [B,D,T,H,W], got " f"{tuple(states.shape)}"
+            )
+        if states.shape[-2:] != (1, 1):
+            raise ValueError(
+                "Transformer predictor requires 1x1 latent maps, got "
+                f"{tuple(states.shape[-2:])}"
+            )
+        if actions is None or actions.ndim != 3:
+            raise ValueError("Encoded actions must have shape [B,C,T]")
+        if states.shape[0] != actions.shape[0] or states.shape[2] != actions.shape[2]:
+            raise ValueError(
+                "State and action sequences must share batch/time dimensions, got "
+                f"{tuple(states.shape)} and {tuple(actions.shape)}"
+            )
+        timesteps = states.shape[2]
+        if timesteps > self.max_seq_len:
+            raise ValueError(
+                f"Sequence length {timesteps} exceeds max_seq_len={self.max_seq_len}"
+            )
+
+        x = states[:, :, :, 0, 0].transpose(1, 2)
+        condition = actions.transpose(1, 2)
+        x = self.state_projection(x)
+        condition = self.condition_projection(condition)
+        x = self.embedding_dropout(
+            x + self.position_embedding[:, :timesteps].to(dtype=x.dtype)
+        )
+        for block in self.blocks:
+            x = block(x, condition)
+        x = self.output_projection(self.final_norm(x))
+        return x.transpose(1, 2).unsqueeze(-1).unsqueeze(-1).contiguous()
 
 
 class InverseDynamicsModel(nn.Module):

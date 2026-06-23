@@ -1,0 +1,96 @@
+logging:
+  log_wandb: true
+  wandb_group:
+  wandb_sweep_id:
+  log_every: 20
+  save_every_n_epochs: 1
+  tqdm_silent: false
+
+meta:
+  device: auto
+  seed: 0
+  experiment_name: impala_transformer_d512
+  model_folder:
+  load_model: false
+  load_checkpoint: latest.pth.tar
+
+data:
+  data_root: /lustre/work/vivatech-jepacompris/gbasserea/datasets/open-h/Surgical/hamlyn/suturing_2
+  camera_key: observation.images.wrist_left
+  state_key: observation.state
+  source_fps: 30
+  sample_fps: 5
+  num_frames: 17
+  image_size: 128
+
+  holdout_episodes: 5
+  holdout_seed: 0
+
+  batch_size: 384
+  val_batch_size: 384
+  num_workers: 16
+  pin_mem: true
+  persistent_workers: true
+  prefetch_factor: 2
+  drop_last: true
+  seed: 0
+
+  table_cache_size: 4
+  decoder_cache_size: 2
+  video_backend: auto
+  video_threads: 1
+  validate_files: true
+
+training:
+  use_amp: true
+  dtype: bfloat16
+
+model:
+  compile: true
+  encoder_architecture: impala
+  dobs: 3
+  henc: 32
+  dstc: 32
+  latent_dim: 512
+  action_dim: 32
+  nsteps: 8
+
+  predictor:
+    architecture: transformer
+    # A compact predictor for the 17-token clips: about 19M parameters.
+    hidden_dim: 512
+    depth: 4
+    heads: 8
+    dim_head: 64
+    mlp_dim: 2048
+    dropout: 0.0
+    embedding_dropout: 0.0
+    max_seq_len: 17
+    # During rollout, use up to four previous predicted latents. The first
+    # prediction starts from one real latent and the history grows thereafter.
+    history_size: 4
+
+    # Embed each 32-D proprioception pair before AdaLN-Zero conditioning.
+    action_embedding_dim: 512
+    action_smoothed_dim: 128
+    action_mlp_scale: 2.0
+
+  regularizer:
+    cov_coeff: 8
+    std_coeff: 16
+    sim_coeff_t: 0
+    idm_coeff: 1
+    idm_hidden_dim: 256
+    first_t_only: false
+    spatial_as_samples: false
+    use_proj: false
+    idm_after_proj: false
+    sim_t_after_proj: false
+
+optim:
+  epochs: 24
+  lr: 0.001
+  min_lr: 1.e-5
+  warmup_ratio: 0.1
+  weight_decay: 1.e-5
+  grad_clip: 2.0

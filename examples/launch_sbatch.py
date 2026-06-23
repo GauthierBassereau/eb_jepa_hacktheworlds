@@ -98,6 +98,7 @@ SLURM_DEFAULTS = {
     "gpus_per_node": int(os.environ.get("EBJEPA_SLURM_GPUS", 1)),
     "qos": os.environ.get("EBJEPA_SLURM_QOS", ""),
     "account": os.environ.get("EBJEPA_SLURM_ACCOUNT", ""),
+    "reservation": os.environ.get("EBJEPA_SLURM_RESERVATION", "Vivatech"),  # shared event reservation, same for everyone (set empty to disable)
 }
 
 
@@ -194,6 +195,8 @@ def make_executor(
         slurm_extra["qos"] = SLURM_DEFAULTS["qos"]
     if SLURM_DEFAULTS["account"]:
         slurm_extra["account"] = SLURM_DEFAULTS["account"]
+    if SLURM_DEFAULTS["reservation"]:
+        slurm_extra["reservation"] = SLURM_DEFAULTS["reservation"]
 
     params = {
         "name": job_name,

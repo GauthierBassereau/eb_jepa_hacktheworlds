@@ -1,7 +1,7 @@
 # FinTime SSL pretraining config.
 meta:
   seed: 0
-  ckpt_dir: /lustre/work/pdl17890/udl806719/checkpoints/fintime/dev
+  ckpt_dir: UPDATEME/checkpoints/fintime/dev
 data:
   data_root: /lustre/work/pdl17890/udl806719/datasets/Finance/fintime_prep
   in_channels: 87

@@ -1,0 +1,81 @@
+logging:
+  # Hackathon compute nodes are offline. Do not override this from the CLI:
+  # Fire may interpret "false" as a truthy string.
+  log_wandb: true
+  wandb_group:
+  wandb_sweep_id:
+  log_every: 20
+  save_every_n_epochs: 1
+  tqdm_silent: false
+
+meta:
+  device: auto
+  seed: 0
+  # Optional human-readable checkpoint folder and W&B run name.
+  # Example CLI override: --meta.experiment_name=encoder64_latent512
+  experiment_name:
+  model_folder: 
+  load_model: false
+  load_checkpoint: latest.pth.tar
+
+data:
+  data_root: /lustre/work/vivatech-jepacompris/gbasserea/datasets/open-h/Surgical/hamlyn/suturing_2
+  camera_key: observation.images.wrist_left
+  state_key: observation.state
+  source_fps: 30
+  sample_fps: 5
+  num_frames: 17
+  image_size: 128
+
+  # These complete episodes come from the official train split and are never
+  # used for training windows or proprioception normalization statistics.
+  holdout_episodes: 5
+  holdout_seed: 0
+
+  batch_size: 384
+  val_batch_size: 384
+  num_workers: 16
+  pin_mem: true
+  persistent_workers: true
+  prefetch_factor: 2
+  drop_last: true
+  seed: 0
+
+  table_cache_size: 4
+  decoder_cache_size: 2
+  video_backend: auto
+  video_threads: 1
+  validate_files: true
+
+training:
+  use_amp: true
+  dtype: bfloat16
+
+model:
+  compile: true
+  encoder_architecture: impala
+  dobs: 3
+  henc: 32
+  dstc: 32
+  latent_dim: 512
+  action_dim: 32
+  nsteps: 8
+  regularizer:
+    cov_coeff: 8
+    std_coeff: 16
+    sim_coeff_t: 12
+    idm_coeff: 1
+    idm_hidden_dim: 256
+    first_t_only: false
+    spatial_as_samples: false
+    use_proj: false
+    idm_after_proj: false
+    sim_t_after_proj: false
+
+optim:
+  epochs: 24
+  lr: 0.001
+  min_lr: 1.e-5
+  warmup_ratio: 0.1
+  weight_decay: 1.e-5
+  grad_clip: 2.0

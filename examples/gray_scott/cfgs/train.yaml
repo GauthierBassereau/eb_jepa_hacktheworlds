@@ -1,7 +1,7 @@
 # Gray-Scott temporal-JEPA pretraining config — 2D physical video [2,T,128,128].
 meta:
   seed: 0
-  ckpt_dir: /lustre/work/pdl17890/udl806719/checkpoints/gray_scott/dev
+  ckpt_dir: UPDATEME/checkpoints/gray_scott/dev
 data:
   data_root: /lustre/work/pdl17890/udl806719/datasets/the_well/gray_scott_reaction_diffusion
   split: train

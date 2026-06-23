@@ -6,4 +6,4 @@ context_length: 2      # context frames fed to the predictor (StateOnlyPredictor
 # irreducible field-space VRMSE floor — report it alongside the rollout.
 # Optional surrogates: train FNO / U-Net iso-protocol (predict next field from the
 # previous 2 fields) to answer The Well's stability question.
-decoder_ckpt: /lustre/work/pdl17890/udl806719/checkpoints/gray_scott/dev/decoder.pth
+decoder_ckpt: UPDATEME/checkpoints/gray_scott/dev/decoder.pth

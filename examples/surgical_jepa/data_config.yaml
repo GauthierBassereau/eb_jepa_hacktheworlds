@@ -1,0 +1,26 @@
+data_root: /lustre/work/vivatech-jepacompris/gbasserea/datasets/open-h/Surgical/hamlyn/suturing_2
+camera_key: observation.images.wrist_left
+state_key: observation.state
+
+# 17 frames sampled every 6 source frames: 3.2 seconds at 5 Hz.
+source_fps: 30
+sample_fps: 5
+num_frames: 17
+image_size: 128
+
+batch_size: 8
+val_batch_size: 4
+num_workers: 0
+pin_mem: false
+persistent_workers: false
+prefetch_factor:
+drop_last: true
+seed: 0
+
+table_cache_size: 4
+decoder_cache_size: 2
+# Prefer TorchCodec; fall back to exact OpenCV decoding when its CUDA runtime
+# is unavailable (for example on a CPU-only login node).
+video_backend: auto
+video_threads: 1
+validate_files: true

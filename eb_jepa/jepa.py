@@ -166,7 +166,20 @@ class JEPA(JEPAbase):
             # For RNN predictors, force ctxt_window_time=1
             effective_ctxt_window = 1 if self.single_unroll else ctxt_window_time
 
-            predicted_states = state[:, :, :effective_ctxt_window]
+            # Most predictors start with a full context window. Sequence
+            # predictors can opt into a shorter seed (typically one frame) and
+            # grow their history during the rollout.
+            initial_context_length = min(
+                int(
+                    getattr(
+                        self.predictor,
+                        "initial_context_length",
+                        effective_ctxt_window,
+                    )
+                ),
+                state.size(2),
+            )
+            predicted_states = state[:, :, :initial_context_length]
             for i in range(nsteps):
                 # Take last ctxt_window_time states
                 context_states = predicted_states[:, :, -effective_ctxt_window:]

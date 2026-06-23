@@ -1,7 +1,7 @@
 # LTSF SSL pretraining config (predictive-JEPA on ETTh1 input windows).
 meta:
   seed: 0
-  ckpt_dir: /lustre/work/pdl17890/udl806719/checkpoints/ltsf/dev
+  ckpt_dir: UPDATEME/checkpoints/ltsf/dev
 data:
   csv: /lustre/work/pdl17890/udl806719/datasets/LTSF/ETT-small/ETTh1.csv
   name: ETTh1

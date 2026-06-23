@@ -1,0 +1,48 @@
+logging:
+  log_wandb: true
+  project: eb_jepa
+  wandb_group:
+  wandb_sweep_id:
+  run_name:
+  run_dir:
+
+meta:
+  device: auto
+  seed: 0
+
+data:
+  # Null values inherit from the self-contained decoder checkpoint.
+  data_root:
+  val_batch_size: 64
+  num_workers: 10
+  pin_mem: true
+  persistent_workers: true
+  prefetch_factor: 2
+  video_backend: auto
+  video_threads: 1
+  validate_files: true
+
+evaluation:
+  # Quantitative metrics use all valid held-out windows at this horizon.
+  rollout_steps: 12
+  # Standard LPIPS backbone. "alex" is the fast, conventional default.
+  lpips_network: alex
+  use_amp: true
+  dtype: bfloat16
+  # Null evaluates every valid held-out window. Set a small integer for smoke tests.
+  max_batches:
+  visualization:
+    enabled: true
+    # These windows are selected independently from the metric loader, so a
+    # longer video horizon does not change the quantitative evaluation set.
+    rollout_steps: 24
+    num_examples: 8
+    # "motion" deterministically picks active windows, preferring one per
+    # held-out episode. Use "even" for evenly distributed examples.
+    selection: motion
+    candidate_count: 80
+    # Optional exact visualization-dataset indices. When set, these take
+    # precedence over automatic selection.
+    dataset_indices:
+    # Null uses the dataset sampling rate (5 fps).
+    video_fps:

@@ -1,0 +1,22 @@
+# One enabled row launches one complete JEPA -> decoder -> evaluation pipeline.
+# Keep names folder-safe. The four coefficient columns are passed only to JEPA
+# training; decoder training and evaluation inherit that JEPA through checkpoints.
+enabled,name,cov_coeff,std_coeff,sim_coeff_t,idm_coeff
+1,less_reg,8,16,0,0
+# 1,less_reg,0,0,12,1
+# 1,baseline,8,16,12,1
+# 1,no_cov,0,16,12,1
+# 1,no_std,8,0,12,1
+# 1,no_temporal_similarity,8,16,0,1
+# 1,no_idm,8,16,12,0
+
+# Example value sweeps. Change enabled from 0 to 1 to submit them.
+# 0,half_std,8,8,12,1
+# 0,double_std,8,32,12,1
+
+# 0,half_cov,4,16,12,1
+# 0,double_cov,16,16,12,1
+# 0,half_temporal_similarity,8,16,6,1
+# 0,double_temporal_similarity,8,16,24,1
+# 0,half_idm,8,16,12,0.5
+# 0,double_idm,8,16,12,2

@@ -1,7 +1,7 @@
 # PointCloud SSL pretraining config (ModelNet40, view-invariant VICReg).
 meta:
   seed: 0
-  ckpt_dir: /lustre/work/pdl17890/udl806719/checkpoints/pointcloud/dev
+  ckpt_dir: UPDATEME/checkpoints/pointcloud/dev
 data:
   data_root: /lustre/work/pdl17890/udl806719/datasets/modelnet40/modelnet40_ply_hdf5_2048
   n_points: 1024

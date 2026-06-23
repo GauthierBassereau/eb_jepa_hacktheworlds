@@ -2,7 +2,7 @@
 # Same config for both representations; only `data.mode` (raw|mel) changes the encoder.
 meta:
   seed: 0
-  ckpt_dir: /lustre/work/pdl17890/udl806719/checkpoints/audio/dev
+  ckpt_dir: UPDATEME/checkpoints/audio/dev
 data:
   data_root: /lustre/work/pdl17890/udl806719/datasets/speech_commands_v2
   mode: raw              # raw ([1,16000]) | mel ([1,n_mels,T])  (override: data.mode=mel)

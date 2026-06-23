@@ -1,0 +1,62 @@
+logging:
+  log_wandb: true
+  wandb_group:
+  wandb_sweep_id:
+  log_every: 20
+  save_every_n_epochs: 1
+  tqdm_silent: false
+  visualization:
+    # "motion" ranks deterministic held-out candidates by endpoint
+    # proprioception displacement. "even" keeps evenly spaced windows.
+    selection: motion
+    num_sequences: 5
+    candidate_count: 100
+    # Frames displayed from each 17-frame sequence.
+    frame_indices: [0, 4, 8, 12, 16]
+    # Exact indices in the held-out visualization dataset. A non-empty list
+    # overrides selection and candidate_count.
+    dataset_indices: []
+
+meta:
+  device: auto
+  seed: 0
+  model_folder:
+  load_model: false
+  load_checkpoint: latest.pth.tar
+
+# Overrides for the source JEPA data configuration. The source dataset path,
+# camera, sampling rate, image size, exact episode split and normalizer are
+# inherited from the JEPA checkpoint and its adjacent config.yaml.
+data:
+  data_root:
+  batch_size: 384
+  val_batch_size: 384
+  num_workers: 16
+  pin_mem: true
+  persistent_workers: true
+  prefetch_factor: 2
+  drop_last: true
+  seed: 0
+  table_cache_size: 4
+  decoder_cache_size: 2
+  video_backend: auto
+  video_threads: 1
+  validate_files: true
+
+training:
+  use_amp: true
+  dtype: bfloat16
+
+decoder:
+  base_size: 4
+  channels: [512, 256, 128, 64, 32, 16]
+  norm_groups: 32
+  output_channels: 3
+
+optim:
+  epochs: 24
+  lr: 1.e-3
+  min_lr: 1.e-4
+  warmup_ratio: 0.1
+  weight_decay: 1.e-5
+  grad_clip: 2.0

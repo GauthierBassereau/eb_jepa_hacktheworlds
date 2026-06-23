@@ -1,0 +1,93 @@
+logging:
+  log_wandb: true
+  wandb_group:
+  wandb_sweep_id:
+  log_every: 20
+  save_every_n_epochs: 1
+  tqdm_silent: false
+
+meta:
+  device: auto
+  seed: 0
+  experiment_name: dinov3_convnext_tiny_d768
+  model_folder:
+  load_model: false
+  load_checkpoint: latest.pth.tar
+
+data:
+  data_root: /lustre/work/vivatech-jepacompris/gbasserea/datasets/open-h/Surgical/hamlyn/suturing_2
+  camera_key: observation.images.wrist_left
+  state_key: observation.state
+  source_fps: 30
+  sample_fps: 5
+  num_frames: 17
+  image_size: 128
+
+  holdout_episodes: 5
+  holdout_seed: 0
+
+  batch_size: 384
+  val_batch_size: 384
+  num_workers: 10
+  pin_mem: true
+  persistent_workers: true
+  prefetch_factor: 2
+  drop_last: true
+  seed: 0
+
+  table_cache_size: 4
+  decoder_cache_size: 2
+  video_backend: auto
+  video_threads: 1
+  validate_files: true
+
+training:
+  use_amp: true
+  dtype: bfloat16
+
+model:
+  compile: false
+  encoder_architecture: dinov3_convnext_tiny
+  dobs: 3
+  latent_dim: 512
+  action_dim: 32
+  nsteps: 8
+
+  encoder:
+    model_name: facebook/dinov3-convnext-tiny-pretrain-lvd1689m
+    revision:
+    # Compute nodes are offline. Cache the gated checkpoint once on the login
+    # node before submitting training; see the launch command in the handoff.
+    local_files_only: true
+    # Number of individual video frames sent through ConvNeXt at once.
+    frame_batch_size: 384
+    gradient_checkpointing: false
+    image_mean: [0.485, 0.456, 0.406]
+    image_std: [0.229, 0.224, 0.225]
+    # Freeze the whole pretrained backbone initially. After this many epochs,
+    # all ConvNeXt stages are fine-tuned; partial-stage training is not used.
+    freeze_backbone_epochs: 0
+
+  regularizer:
+    cov_coeff: 8
+    std_coeff: 16
+    sim_coeff_t: 12
+    idm_coeff: 1
+    idm_hidden_dim: 256
+    first_t_only: false
+    spatial_as_samples: false
+    use_proj: false
+    idm_after_proj: false
+    sim_t_after_proj: false
+
+optim:
+  epochs: 24
+  # Projection, predictor and IDM.
+  lr: 1e-3
+  # Entire pretrained ConvNeXt backbone.
+  backbone_lr: 1.e-5
+  min_lr: 1.e-6
+  warmup_ratio: 0.1
+  weight_decay: 1.e-5
+  backbone_weight_decay: 1.e-5
+  grad_clip: 2.0
