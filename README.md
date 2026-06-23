@@ -68,6 +68,55 @@ JEPA for world modeling + planning in Two Rooms environment.
 | <img src="examples/ac_video_jepa/assets/top_randw_agent_steps_succ.gif" alt="Successful planning episode" width="155" /> | <img src="examples/ac_video_jepa/assets/top_randw_state.png" alt="Episode task definition" width="300" /> |
 | *Successful planning episode* | *From init to goal state* |
 
+### Surgical JEPA — Hackathon contribution
+
+We adapted AC-JEPA to the [`PhysicalAI-Robotics-Open-H-Embodiment`](https://huggingface.co/datasets/nvidia/PhysicalAI-Robotics-Open-H-Embodiment) dataset, using the `Surgical/hamlyn/suturing_2` subset. The contribution includes a LeRobot v2.1 video/proprioception loader with episode-level holdout, an autoregressive latent world model, IMPALA-GRU and causal Transformer variants, and an RGB decoder for pixel-space evaluation. Rollouts are evaluated on held-out episodes with LPIPS, both autoregressively and with clean context.
+
+Only small, reusable changes were made to the main `eb_jepa` library: sequence predictors can now start from one real frame and progressively fill their existing autoregressive context window, and we added a causal action-conditioned Transformer predictor and a DINOv3 ConvNeXt encoder. The rest of the work is isolated in `examples/surgical_jepa`, including dataset preparation, training configs, decoder training, evaluation, visualizations, coefficient sweeps, and SLURM launchers.
+
+<p align="center">
+  <img src="figures/eval_ep15.gif" alt="Surgical JEPA rollout at epoch 15" width="776">
+  <br>
+  <i>Best run at epoch 15: ground truth, autoregressive rollout, and clean-context prediction.</i>
+</p>
+
+The configs and implementation are in [`examples/surgical_jepa`](examples/surgical_jepa/). Before running, update `data.data_root` in the selected training config.
+
+```bash
+# Check the dataset and generate a few sample previews
+uv run python -m examples.surgical_jepa.test_dataset --num-previews 3
+
+# Train the IMPALA + GRU baseline
+uv run python examples/surgical_jepa/main.py \
+  --fname examples/surgical_jepa/train.yaml
+
+# Other tested variants
+uv run python examples/surgical_jepa/main.py \
+  --fname examples/surgical_jepa/train_transformer.yaml
+uv run python examples/surgical_jepa/main.py \
+  --fname examples/surgical_jepa/train_ConvNeXt.yaml
+
+# Train the RGB decoder from a JEPA checkpoint
+uv run python examples/surgical_jepa/train_decoder.py \
+  --jepa_checkpoint /path/to/jepa/best.pth.tar
+
+# Evaluate decoded rollouts
+uv run python examples/surgical_jepa/evaluation.py \
+  --checkpoint /path/to/decoder/best.pth.tar
+```
+
+Equivalent SLURM launchers are provided:
+
+```bash
+sbatch slurm_surgical_train.sh examples/surgical_jepa/train.yaml
+sbatch slurm_surgical_decoder.sh /path/to/jepa/best.pth.tar
+sbatch slurm_surgical_evaluation.sh /path/to/decoder/best.pth.tar
+```
+
+Two self-contained JEPA + decoder checkpoints are included:
+[`baseline_eb_jepa.tar`](checkpoints/baseline_eb_jepa.tar) and
+[`transformer.tar`](checkpoints/transformer.tar). They can be passed directly to the evaluation command above.
+
 ---
 
 ## 🚀 Installation
